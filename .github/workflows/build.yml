@@ -1,0 +1,53 @@
+name: Build APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Create Capacitor project
+        run: |
+          npm init -y
+          npm i @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6 @capacitor/local-notifications@6
+          mkdir -p www
+          cp index.html www/index.html
+          npx cap init "Noor" com.noor.mushaf --web-dir=www
+          npx cap add android
+      - name: Add adhan sound and permissions
+        run: |
+          python3 - <<'EOF'
+          import re,base64,os
+          s=open('index.html',encoding='utf8').read()
+          m=re.search(r'ADHAN_SRC="data:audio/mpeg;base64,([^"]+)"',s)
+          os.makedirs('android/app/src/main/res/raw',exist_ok=True)
+          open('android/app/src/main/res/raw/adhan.mp3','wb').write(base64.b64decode(m.group(1)))
+          p='android/app/src/main/AndroidManifest.xml'
+          x=open(p,encoding='utf8').read()
+          names=['ACCESS_COARSE_LOCATION','ACCESS_FINE_LOCATION','POST_NOTIFICATIONS','SCHEDULE_EXACT_ALARM','USE_EXACT_ALARM','RECEIVE_BOOT_COMPLETED','VIBRATE','WAKE_LOCK']
+          perms=''.join('<uses-permission android:name="android.permission.%s"/>\n' % n for n in names)
+          x=x.replace('<application',perms+'<application',1)
+          open(p,'w',encoding='utf8').write(x)
+          q='android/app/src/main/res/values/strings.xml'
+          y=open(q,encoding='utf8').read().replace('>Noor<','>نور<')
+          open(q,'w',encoding='utf8').write(y)
+          EOF
+          npx cap sync android
+      - name: Build APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Noor-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
